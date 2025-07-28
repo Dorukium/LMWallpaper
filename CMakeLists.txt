@@ -35,16 +35,7 @@ endif()
 # Kaynak dosyaları - sadece mevcut olanlar
 set(SOURCES
     main.cpp
-<<<<<<< HEAD
     Logger.cpp
-=======
-    Source/TrayManager.cpp
-    Source/VideoPlayer.cpp
-    Source/VideoPreview.cpp
-    Source/MemoryOptimizer.cpp
-    Source/ImageProcessor.cpp
-    Source/SettingsWindow.cpp
->>>>>>> 019b354de559013cc7555c9cebcc8dc530f2be3f
 )
 
 set(HEADERS
@@ -129,8 +120,8 @@ target_link_libraries(LMWallpaper ${WIN_LIBS})
 
 # Opsiyonel kütüphaneleri kontrol et ve bağla
 foreach(lib ${OPTIONAL_LIBS})
-    find_library(${lib}_FOUND ${lib})
-    if(${lib}_FOUND)
+    find_library(${lib}_LIB ${lib})
+    if(${lib}_LIB)
         target_link_libraries(LMWallpaper ${lib})
         message(STATUS "Kütüphane bulundu: ${lib}")
     else()
@@ -191,7 +182,6 @@ set_target_properties(LMWallpaper PROPERTIES
 
 # Post-build komutları
 add_custom_command(TARGET LMWallpaper POST_BUILD
-<<<<<<< HEAD
     COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:LMWallpaper>
     COMMENT "Output dizini oluşturuluyor"
 )
@@ -205,23 +195,11 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
     )
 endif()
 
-# Test hedefi (opsiyonel)
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests")
-    option(BUILD_TESTS "Build tests" OFF)
-    if(BUILD_TESTS)
-        add_subdirectory(tests)
-    endif()
-endif()
-
 # CPack ayarları (installer için)
 set(CPACK_PACKAGE_NAME "LMWallpaper")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Dynamic Wallpaper Application")
 set(CPACK_PACKAGE_VENDOR "LMWallpaper Team")
-set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
-set(CPACK_PACKAGE_INSTALL_DIRECTORY "LMWallpaper")
-
-include(CPack)
 
 # Bilgi mesajları
 message(STATUS "=== LMWallpaper Build Configuration ===")
@@ -230,9 +208,3 @@ message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "Source Files: ${SOURCES}")
 message(STATUS "=======================================")
-=======
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
-    $<TARGET_FILE_DIR:LMWallpaper>
-)
->>>>>>> 019b354de559013cc7555c9cebcc8dc530f2be3f
