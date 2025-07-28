@@ -1,111 +1,90 @@
-cmake_minimum_required(VERSION 3.20)
-project(LMWallpaper VERSION 1.0.0 LANGUAGES CXX)
+# CMake Listfile for LMWallpaper
+#
+# Copyright (c) 2024 Dorukium
+#
+# This project is licensed under the MIT License.
+# See the LICENSE file for details.
 
-# C++ standart ayarları
+# Minimum CMake version
+cmake_minimum_required(VERSION 3.20)
+
+# Project definition
+project(LMWallpaper VERSION 1.0 LANGUAGES CXX)
+
+# Set C++ standard to 20
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Windows platformu kontrolü
-if(NOT WIN32)
-    message(FATAL_ERROR "Bu proje sadece Windows platformunda çalışır")
+# Vcpkg toolchain setup
+if(DEFINED ENV{VCPKG_ROOT})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "Vcpkg toolchain file")
 endif()
 
-# Build türü ayarları
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
-endif()
+# Find required packages
+# NOTE: Added fmt package which was missing for the Logger.
+find_package(fmt CONFIG REQUIRED)
 
-# Derleyici bayrakları
-if(MSVC)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX- /permissive-")
-    
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set(CMAKE_CXX_FLAGS_DEBUG "/MDd /Od /Zi /RTC1")
-        add_compile_definitions(_DEBUG DEBUG)
+# Include directories
+include_directories(.)
+include_directories(./Headers)
+
+# Function to check for header existence and add to list
+function(check_and_add_header header_file header_list)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${header_file}")
+        set(${header_list} ${${header_list}} "${header_file}" PARENT_SCOPE)
+        message(STATUS "Header eklendi: ${header_file}")
     else()
-        set(CMAKE_CXX_FLAGS_RELEASE "/MD /O2 /Ob2 /DNDEBUG")
-        add_compile_definitions(NDEBUG)
+        message(WARNING "Header bulunamadi: ${header_file}")
     endif()
-else()
-    message(FATAL_ERROR "Bu proje MSVC derleyicisi gerektirir")
-endif()
+endfunction()
 
-# Temel kaynak dosyaları
-set(SOURCES
-    main.cpp
-    Logger.cpp
-)
-
-# Temel header dosyaları
-set(HEADERS
-    framework.h
-    targetvar.h
-    Logger.h
-)
-
-# Opsiyonel header dosyaları
-set(OPTIONAL_HEADERS
-    Headers/resource.h
-    Headers/ErrorHandler.h
-    Headers/TrayManager.h
-    Headers/VideoPlayer.h
-    Headers/VideoPreview.h
-    Headers/MemoryOptimizer.h
-    Headers/ImageProcessor.h
-    Headers/SettingsWindow.h
-    Headers/ThemeManager.h
-    Headers/MonitorManager.h
-)
-
-foreach(header ${OPTIONAL_HEADERS})
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${header}")
-        list(APPEND HEADERS ${header})
-        message(STATUS "Header eklendi: ${header}")
+# Function to check for source existence and add to list
+function(check_and_add_source source_file source_list)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${source_file}")
+        set(${source_list} ${${source_list}} "${source_file}" PARENT_SCOPE)
+        message(STATUS "Source eklendi: ${source_file}")
     else()
-        message(STATUS "Header bulunamadi: ${header}")
+        message(WARNING "Source bulunamadi: ${source_file}")
     endif()
-endforeach()
+endfunction()
 
-# Opsiyonel source dosyaları
-set(OPTIONAL_SOURCES
-    Source/TrayManager.cpp
-    Source/VideoPlayer.cpp
-    Source/VideoPreview.cpp
-    Source/MemoryOptimizer.cpp
-    Source/ImageProcessor.cpp
-    Source/SettingsWindow.cpp
-    Source/ThemeManager.cpp
-    Source/MonitorManager.cpp
-    Source/ErrorHandler.cpp
-)
+# Gather header files
+set(header_files "")
+check_and_add_header("framework.h" header_files)
+check_and_add_header("targetvar.h" header_files)
+check_and_add_header("Logger.h" header_files)
+check_and_add_header("Headers/resource.h" header_files)
+check_and_add_header("Headers/ErrorHandler.h" header_files)
+check_and_add_header("Headers/TrayManager.h" header_files)
+check_and_add_header("Headers/VideoPlayer.h" header_files)
+check_and_add_header("Headers/VideoPreview.h" header_files)
+check_and_add_header("Headers/MemoryOptimizer.h" header_files)
+check_and_add_header("Headers/ImageProcessor.h" header_files)
+check_and_add_header("Headers/SettingsWindow.h" header_files)
+check_and_add_header("Headers/ThemeManager.h" header_files)
+# NOTE: Removed non-existent MonitorManager.h
+# check_and_add_header("Headers/MonitorManager.h" header_files) 
 
-foreach(source ${OPTIONAL_SOURCES})
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
-        list(APPEND SOURCES ${source})
-        message(STATUS "Source eklendi: ${source}")
-    else()
-        message(STATUS "Source bulunamadi: ${source}")
-    endif()
-endforeach()
+# Gather source files
+set(source_files "main.cpp" "Logger.cpp")
+check_and_add_source("Source/TrayManager.cpp" source_files)
+check_and_add_source("Source/VideoPlayer.cpp" source_files)
+check_and_add_source("Source/VideoPreview.cpp" source_files)
+check_and_add_source("Source/MemoryOptimizer.cpp" source_files)
+# NOTE: Corrected typo from "ImageProcesser.cpp" to "ImageProcessor.cpp"
+# And assuming the file will be renamed. If not, change this line back.
+check_and_add_source("Source/ImageProcessor.cpp" source_files)
+check_and_add_source("Source/SettingsWindow.cpp" source_files)
+# NOTE: Removed non-existent source files
+# check_and_add_source("Source/ThemeManager.cpp" source_files)
+# check_and_add_source("Source/MonitorManager.cpp" source_files)
+check_and_add_source("Source/ErrorHandler.cpp" source_files)
 
-# Windows sistem kütüphaneleri
-set(WIN_LIBS
-    user32
-    shell32
-    gdi32
-    ole32
-    oleaut32
-    uuid
-    comctl32
-    advapi32
-    kernel32
-    comdlg32
-    psapi
-)
+# Add executable
+add_executable(LMWallpaper WIN32 ${source_files} ${header_files})
 
-# DirectX/Media Foundation kütüphaneleri
-set(OPTIONAL_LIBS
+# Link libraries
+set(libraries
     d2d1
     dwrite
     dwmapi
@@ -117,75 +96,35 @@ set(OPTIONAL_LIBS
     strmiids
     gdiplus
 )
-
-# Executable oluştur - sadece source dosyaları
-add_executable(LMWallpaper WIN32 ${SOURCES})
-
-# Header dosyalarını target'a ekle (compile edilmeyecek)
-target_sources(LMWallpaper PRIVATE ${HEADERS})
-
-# Temel Windows kütüphanelerini bağla
-target_link_libraries(LMWallpaper ${WIN_LIBS})
-
-# Opsiyonel kütüphaneleri kontrol et ve bağla
-foreach(lib ${OPTIONAL_LIBS})
-    find_library(${lib}_LIB ${lib})
-    if(${lib}_LIB)
-        target_link_libraries(LMWallpaper ${lib})
+foreach(lib ${libraries})
+    find_library(LIB_${lib} NAMES ${lib})
+    if(LIB_${lib})
+        target_link_libraries(LMWallpaper PRIVATE ${LIB_${lib}})
         message(STATUS "Kütüphane bulundu: ${lib}")
     else()
-        message(STATUS "Kütüphane bulunamadı: ${lib}")
+        message(WARNING "Kütüphane bulunamadi: ${lib}")
     endif()
 endforeach()
 
-# Include dizinleri
-target_include_directories(LMWallpaper PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/Headers
-)
+# NOTE: Linking the fmt library
+target_link_libraries(LMWallpaper PRIVATE fmt::fmt)
 
-# Preprocessor tanımlamaları
-target_compile_definitions(LMWallpaper PRIVATE
-    WIN32_LEAN_AND_MEAN
-    NOMINMAX
-    UNICODE
-    _UNICODE
-    _WIN32_WINNT=0x0A00
-    WINVER=0x0A00
-)
-
-# Windows subsystem ayarları
-set_target_properties(LMWallpaper PROPERTIES
-    WIN32_EXECUTABLE TRUE
-)
-
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set_target_properties(LMWallpaper PROPERTIES
-        LINK_FLAGS "/SUBSYSTEM:CONSOLE"
-    )
-else()
-    set_target_properties(LMWallpaper PROPERTIES
-        LINK_FLAGS "/SUBSYSTEM:WINDOWS"
-    )
-endif()
-
-# Resource dosyası kontrolü
+# Add resource file if it exists
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/LMWallpaper.rc")
-    target_sources(LMWallpaper PRIVATE LMWallpaper.rc)
+    target_sources(LMWallpaper PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/LMWallpaper.rc")
     message(STATUS "Resource dosyası eklendi")
 endif()
 
-# Output dizini ayarları
-set_target_properties(LMWallpaper PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/bin/Debug"
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin/Release"
-)
+# Add manifest file if it exists
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/LMWallpaper.manifest")
+    set_target_properties(LMWallpaper PROPERTIES LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:\"${CMAKE_CURRENT_SOURCE_DIR}/LMWallpaper.manifest\"")
+    message(STATUS "Manifest dosyası eklendi")
+endif()
 
-# Bilgi mesajları
+# Output build configuration
 message(STATUS "=== LMWallpaper Build Configuration ===")
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
-message(STATUS "Source Files: ${SOURCES}")
-message(STATUS "Header Files: ${HEADERS}")
+message(STATUS "Source Files: ${source_files}")
+message(STATUS "Header Files: ${header_files}")
 message(STATUS "=======================================")
