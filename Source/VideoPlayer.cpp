@@ -1,87 +1,218 @@
 // Source/VideoPlayer.cpp
-#include "VideoPlayer.h"
-#include "framework.h"
+#include "../Headers/VideoPlayer.h"
+
+// Static members
+std::vector<VideoPlayer*> VideoPlayer::allInstances;
+int VideoPlayer::maxBufferFrames = 3;
 
 VideoPlayer::VideoPlayer(HMONITOR monitorHandle) 
-    : monitorHandle(monitorHandle), isPlaying(false) {
-    InitializeGraphBuilder();
-    ConfigureVideoWindow();
+    : monitorHandle(monitorHandle)
+    , isPlaying(false)
+    , pGraphBuilder(nullptr)
+    , pMediaControl(nullptr)
+    , pVideoWindow(nullptr)
+    , pMediaEvent(nullptr)
+    , pBasicVideo(nullptr)
+    , targetWindow(nullptr)
+    , shouldStop(false) {
+    
+    // Instance'ı listeye ekle
+    allInstances.push_back(this);
+    
+    if (!InitializeGraphBuilder()) {
+        ErrorHandler::LogError("VideoPlayer başlatılamadı", ErrorLevel::ERROR);
+    }
+    
+    if (!imageProcessor.Initialize()) {
+        ErrorHandler::LogError("ImageProcessor başlatılamadı", ErrorLevel::ERROR);
+    }
 }
 
 VideoPlayer::~VideoPlayer() {
     Cleanup();
+    
+    // Instance'ı listeden kaldır
+    auto it = std::find(allInstances.begin(), allInstances.end(), this);
+    if (it != allInstances.end()) {
+        allInstances.erase(it);
+    }
 }
 
-void VideoPlayer::InitializeGraphBuilder() {
+bool VideoPlayer::InitializeGraphBuilder() {
+    HRESULT hr = S_OK;
+    
     try {
         // DirectShow graf builder oluşturma
-        CoCreateInstance(CLSID_FilterGraph, nullptr, CLSCTX_INPROC_SERVER,
-                        IID_PPV_ARGS(&graphBuilder));
+        hr = CoCreateInstance(CLSID_FilterGraph, nullptr, CLSCTX_INPROC_SERVER,
+                            IID_IGraphBuilder, (void**)&pGraphBuilder);
+        
+        if (FAILED(hr)) {
+            throw std::runtime_error("FilterGraph oluşturulamadı");
+        }
         
         // Media kontrol ve event nesneleri al
-        graphBuilder->QueryInterface(IID_PPV_ARGS(&mediaControl));
-        graphBuilder->QueryInterface(IID_PPV_ARGS(&mediaEvent));
+        hr = pGraphBuilder->QueryInterface(IID_IMediaControl, (void**)&pMediaControl);
+        if (FAILED(hr)) {
+            throw std::runtime_error("IMediaControl alınamadı");
+        }
         
-        // Video pencere oluştur
-        CoCreateInstance(CLSID_VideoWindow, nullptr, CLSCTX_INPROC,
-                        IID_PPV_ARGS(&videoWindow));
-    }
-    catch (const std::exception& e) {
+        hr = pGraphBuilder->QueryInterface(IID_IMediaEvent, (void**)&pMediaEvent);
+        if (FAILED(hr)) {
+            throw std::runtime_error("IMediaEvent alınamadı");
+        }
+        
+        hr = pGraphBuilder->QueryInterface(IID_IVideoWindow, (void**)&pVideoWindow);
+        if (FAILED(hr)) {
+            ErrorHandler::LogError("IVideoWindow alınamadı (video olmayabilir)", ErrorLevel::WARNING);
+        }
+        
+        hr = pGraphBuilder->QueryInterface(IID_IBasicVideo, (void**)&pBasicVideo);
+        if (FAILED(hr)) {
+            ErrorHandler::LogError("IBasicVideo alınamadı (video olmayabilir)", ErrorLevel::WARNING);
+        }
+        
+        return true;
+        
+    } catch (const std::exception& e) {
         ErrorHandler::LogError("DirectShow başlatma hatası: " + std::string(e.what()),
                              ErrorLevel::CRITICAL);
-        throw;
+        return false;
     }
 }
 
-bool VideoPlayer::LoadVideo(const std::string& videoPath) {
+bool VideoPlayer::LoadVideo(const std::wstring& videoPath) {
     try {
         // Video dosyasını kontrol et
         if (!std::filesystem::exists(videoPath)) {
-            ErrorHandler::LogError("Video dosyası bulunamadı: " + videoPath,
+            ErrorHandler::LogError("Video dosyası bulunamadı: " + 
+                                 std::string(videoPath.begin(), videoPath.end()),
                                  ErrorLevel::ERROR);
             return false;
         }
+        
+        // Desteklenen format kontrolü
+        if (!imageProcessor.IsSupportedVideoFormat(videoPath)) {
+            ErrorHandler::LogError("Desteklenmeyen video formatı", ErrorLevel::ERROR);
+            return false;
+        }
 
-        // Graf builder'ı temizle
-        if (isPlaying) Stop();
+        // Mevcut video varsa durdur
+        if (isPlaying) {
+            Stop();
+        }
+        
+        // Graf temizle
+        if (pGraphBuilder) {
+            IEnumFilters* pEnum = nullptr;
+            pGraphBuilder->EnumFilters(&pEnum);
+            if (pEnum) {
+                IBaseFilter* pFilter = nullptr;
+                while (pEnum->Next(1, &pFilter, nullptr) == S_OK) {
+                    pGraphBuilder->RemoveFilter(pFilter);
+                    pFilter->Release();
+                    pEnum->Reset(); // Enum'u sıfırla çünkü liste değişti
+                }
+                pEnum->Release();
+            }
+        }
         
         // Yeni video dosyasını yükle
-        IGraphBuilder* pGraph = graphBuilder.get();
-        IParse* pParse = nullptr;
+        HRESULT hr = BuildGraph(videoPath);
+        if (FAILED(hr)) {
+            ErrorHandler::LogError("Video graf oluşturulamadı", ErrorLevel::ERROR);
+            return false;
+        }
         
-        CoCreateInstance(CLSID_ParseFilter, nullptr, CLSCTX_INPROC_SERVER,
-                        IID_PPV_ARGS(&pParse));
-        
-        pParse->Init(videoPath.c_str(), nullptr);
-        pGraph->AddFilter(pParse, L"Source Filter");
+        // Video penceresini yapılandır
+        ConfigureVideoWindow();
         
         // Bellek optimizasyonu için buffer'ı temizle
-        frameBuffer.clear();
-        MemoryOptimizer::ClearUnusedFrames();
+        ClearUnusedFrames();
         
         currentVideoPath = videoPath;
+        
+        ErrorHandler::LogInfo("Video yüklendi: " + 
+                            std::string(videoPath.begin(), videoPath.end()),
+                            InfoLevel::INFO);
+        
         return true;
-    }
-    catch (const std::exception& e) {
+        
+    } catch (const std::exception& e) {
         ErrorHandler::LogError("Video yükleme hatası: " + std::string(e.what()),
                              ErrorLevel::ERROR);
         return false;
     }
 }
 
+HRESULT VideoPlayer::BuildGraph(const std::wstring& videoPath) {
+    if (!pGraphBuilder) {
+        return E_FAIL;
+    }
+    
+    // RenderFile kullanarak otomatik graf oluştur
+    HRESULT hr = pGraphBuilder->RenderFile(videoPath.c_str(), nullptr);
+    
+    if (FAILED(hr)) {
+        ErrorHandler::LogError("Video dosyası render edilemedi: HRESULT = 0x" + 
+                             std::to_string(hr), ErrorLevel::ERROR);
+        return hr;
+    }
+    
+    return hr;
+}
+
+void VideoPlayer::ConfigureVideoWindow() {
+    if (!pVideoWindow || !targetWindow) {
+        return;
+    }
+    
+    try {
+        // Video penceresini hedef pencereye bağla
+        pVideoWindow->put_Owner((OAHWND)targetWindow);
+        pVideoWindow->put_WindowStyle(WS_CHILD | WS_CLIPSIBLINGS);
+        
+        // Pencere boyutunu al
+        RECT rect;
+        GetClientRect(targetWindow, &rect);
+        
+        // Video boyutunu ayarla
+        pVideoWindow->SetWindowPosition(0, 0, rect.right, rect.bottom);
+        pVideoWindow->put_Visible(OATRUE);
+        
+        ErrorHandler::LogInfo("Video penceresi yapılandırıldı", InfoLevel::DEBUG);
+        
+    } catch (const std::exception& e) {
+        ErrorHandler::LogError("Video penceresi yapılandırma hatası: " + std::string(e.what()),
+                             ErrorLevel::WARNING);
+    }
+}
+
+void VideoPlayer::SetTargetWindow(HWND hWnd) {
+    targetWindow = hWnd;
+    ConfigureVideoWindow();
+}
+
 void VideoPlayer::Play() {
     try {
-        if (!mediaControl) {
-            ErrorHandler::LogError("Media kontrol nesnesi bulunamadı",
-                                 ErrorLevel::ERROR);
+        if (!pMediaControl) {
+            ErrorHandler::LogError("Media kontrol nesnesi bulunamadı", ErrorLevel::ERROR);
             return;
         }
 
-        mediaControl->Run();
+        HRESULT hr = pMediaControl->Run();
+        if (FAILED(hr)) {
+            ErrorHandler::LogError("Video oynatma başlatılamadı: HRESULT = 0x" + 
+                                 std::to_string(hr), ErrorLevel::ERROR);
+            return;
+        }
+        
         isPlaying = true;
+        shouldStop = false;
         StartVideoProcessingThread();
-    }
-    catch (const std::exception& e) {
+        
+        ErrorHandler::LogInfo("Video oynatma başlatıldı", InfoLevel::INFO);
+        
+    } catch (const std::exception& e) {
         ErrorHandler::LogError("Video oynatma hatası: " + std::string(e.what()),
                              ErrorLevel::ERROR);
     }
@@ -89,13 +220,24 @@ void VideoPlayer::Play() {
 
 void VideoPlayer::Stop() {
     try {
-        if (mediaControl) {
-            mediaControl->Stop();
-        }
+        shouldStop = true;
         isPlaying = false;
-        Cleanup();
-    }
-    catch (const std::exception& e) {
+        
+        if (pMediaControl) {
+            pMediaControl->Stop();
+        }
+        
+        // Video thread'ini bekle
+        if (videoThread && videoThread->joinable()) {
+            videoThread->join();
+            videoThread.reset();
+        }
+        
+        ClearUnusedFrames();
+        
+        ErrorHandler::LogInfo("Video oynatma durduruldu", InfoLevel::INFO);
+        
+    } catch (const std::exception& e) {
         ErrorHandler::LogError("Video durdurma hatası: " + std::string(e.what()),
                              ErrorLevel::ERROR);
     }
@@ -110,49 +252,130 @@ void VideoPlayer::TogglePlayback() {
 }
 
 void VideoPlayer::StartVideoProcessingThread() {
-    // Video işleme thread'i başlat
-    std::thread([this]() {
-        while (isPlaying) {
+    if (videoThread && videoThread->joinable()) {
+        shouldStop = true;
+        videoThread->join();
+    }
+    
+    shouldStop = false;
+    videoThread = std::make_unique<std::thread>(&VideoPlayer::VideoProcessingLoop, this);
+}
+
+void VideoPlayer::VideoProcessingLoop() {
+    ErrorHandler::LogInfo("Video işleme döngüsü başlatıldı", InfoLevel::DEBUG);
+    
+    while (!shouldStop && isPlaying) {
+        try {
             ProcessVideoFrame();
-            // CPU kullanımını optimize et
-            std::this_thread::sleep_for(std::chrono::milliseconds(16)); // ~60 FPS
+            
+            // CPU kullanımını optimize et (60 FPS için ~16ms)
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            
+        } catch (const std::exception& e) {
+            ErrorHandler::LogError("Video işleme döngüsü hatası: " + std::string(e.what()),
+                                 ErrorLevel::ERROR);
+            break;
         }
-    }).detach();
+    }
+    
+    ErrorHandler::LogInfo("Video işleme döngüsü sonlandırıldı", InfoLevel::DEBUG);
 }
 
 void VideoPlayer::ProcessVideoFrame() {
     try {
-        // Frame buffer'ı kontrol et
-        if (frameBuffer.size() >= MAX_BUFFER_SIZE) {
+        std::lock_guard<std::mutex> lock(bufferMutex);
+        
+        // Buffer boyutunu kontrol et
+        while (static_cast<int>(frameBuffer.size()) >= maxBufferFrames) {
             frameBuffer.pop_front();
         }
-
-        // Yeni frame'ı işle
-        cv::Mat frame;
-        // ... Frame işleme mantığı burada eklenecek ...
-
-        // Frame buffer'a ekle
-        frameBuffer.push_back(std::move(frame));
-
-        // Bellek optimizasyonu
-        MemoryOptimizer::DynamicBufferResize();
-    }
-    catch (const std::exception& e) {
+        
+        // Yeni frame verisi oluştur
+        auto frameData = std::make_unique<FrameData>();
+        frameData->timestamp = GetTickCount();
+        
+        // Frame'i buffer'a ekle (şimdilik boş frame)
+        frameBuffer.push_back(std::move(frameData));
+        
+        // Bellek kullanımını kontrol et
+        static int frameCounter = 0;
+        if (++frameCounter % 60 == 0) {  // Her saniyede bir kontrol
+            // Bellek optimizasyon sinyali gönder
+            // MemoryOptimizer otomatik olarak çalışacak
+        }
+        
+    } catch (const std::exception& e) {
         ErrorHandler::LogError("Frame işleme hatası: " + std::string(e.what()),
+                             ErrorLevel::ERROR);
+    }
+}
+
+void VideoPlayer::ClearUnusedFrames() {
+    try {
+        std::lock_guard<std::mutex> lock(bufferMutex);
+        
+        // Tüm frame'leri temizle
+        frameBuffer.clear();
+        
+        ErrorHandler::LogInfo("Frame buffer temizlendi", InfoLevel::DEBUG);
+        
+    } catch (const std::exception& e) {
+        ErrorHandler::LogError("Frame temizleme hatası: " + std::string(e.what()),
                              ErrorLevel::ERROR);
     }
 }
 
 void VideoPlayer::Cleanup() {
     try {
-        if (mediaControl) {
-            mediaControl->Stop();
+        Stop();
+        
+        // DirectShow nesnelerini temizle
+        if (pBasicVideo) {
+            pBasicVideo->Release();
+            pBasicVideo = nullptr;
         }
+        
+        if (pVideoWindow) {
+            pVideoWindow->put_Visible(OAFALSE);
+            pVideoWindow->put_Owner(NULL);
+            pVideoWindow->Release();
+            pVideoWindow = nullptr;
+        }
+        
+        if (pMediaEvent) {
+            pMediaEvent->Release();
+            pMediaEvent = nullptr;
+        }
+        
+        if (pMediaControl) {
+            pMediaControl->Release();
+            pMediaControl = nullptr;
+        }
+        
+        if (pGraphBuilder) {
+            pGraphBuilder->Release();
+            pGraphBuilder = nullptr;
+        }
+        
         frameBuffer.clear();
-        MemoryOptimizer::ClearUnusedFrames();
-    }
-    catch (const std::exception& e) {
-        ErrorHandler::LogError("Temizlik hatası: " + std::string(e.what()),
+        
+        ErrorHandler::LogInfo("VideoPlayer temizlendi", InfoLevel::DEBUG);
+        
+    } catch (const std::exception& e) {
+        ErrorHandler::LogError("VideoPlayer temizlik hatası: " + std::string(e.what()),
                              ErrorLevel::ERROR);
     }
+}
+
+void VideoPlayer::CleanupThreads() {
+    // Tüm instance'ların thread'lerini temizle
+    for (auto* player : allInstances) {
+        if (player && player->videoThread && player->videoThread->joinable()) {
+            player->shouldStop = true;
+            player->videoThread->join();
+            player->videoThread.reset();
+        }
+    }
+    
+    ErrorHandler::LogInfo("Tüm video thread'leri temizlendi", InfoLevel::DEBUG);
 }

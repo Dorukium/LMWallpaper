@@ -7,7 +7,11 @@
         "--config", "Release"
     ],
     "files.associations": {
-        "string": "cpp"
+        "string": "cpp",
+        "condition_variable": "cpp",
+        "*.rh": "cpp",
+        "memory": "cpp",
+        "algorithm": "cpp"
     },
     "cmake.configureArgs": [
         "-DVCPKG_APPLOCAL_DEPS=ON",

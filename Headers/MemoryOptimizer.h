@@ -1,13 +1,7 @@
 // Headers/MemoryOptimizer.h
 #pragma once
 
-#include <Windows.h>
-#include <atomic>
-#include <thread>
-#include <mutex>
-#include <string>
-#include <memory>
-#include "resource.h"
+#include "framework.h"
 #include "ErrorHandler.h"
 
 class MemoryOptimizer {
@@ -22,13 +16,16 @@ private:
 public:
     MemoryOptimizer();
     ~MemoryOptimizer();
+    
     void AutoCleanup();
     void ClearUnusedFrames();
     void DynamicBufferResize();
     size_t GetCurrentMemoryUsage();
+    size_t GetPeakMemoryUsage() const { return peakMemoryUsage; }
+    
+    void MonitorMemoryUsage();
+    void OptimizeMemoryAllocation();
 
 private:
     void CleanupLoop();
-    void MonitorMemoryUsage();
-    void OptimizeMemoryAllocation();
 };

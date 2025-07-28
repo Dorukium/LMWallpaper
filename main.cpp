@@ -1,13 +1,21 @@
 // main.cpp
-#include "pch.h"
 #include "framework.h"
 #include "resource.h"
-#include "TrayManager.h"
+#include "Headers/TrayManager.h"
+#include "Headers/ErrorHandler.h"
+#include "Headers/MemoryOptimizer.h"
 
 // Global değişkenler
-static HINSTANCE hInst = nullptr;
-static HWND hWndMain = nullptr;
-static TrayManager* trayManager = nullptr;
+HINSTANCE hInst = nullptr;
+HWND hWndMain = nullptr;
+static std::unique_ptr<TrayManager> trayManager = nullptr;
+static std::unique_ptr<MemoryOptimizer> memoryOptimizer = nullptr;
+
+// Forward declarations
+LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+bool CheckInstanceRunning();
+void InitializeApplication();
+void CleanupApplication();
 
 // Windows ana mesaj döngüsü işleyicisi
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -15,7 +23,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
     switch (message)
     {
     case WM_COMMAND:
-        if (lParam == 0)
+        if (lParam == 0 && trayManager)
         {
             // Menü öğesi seçildiğinde
             WORD menuItemId = LOWORD(wParam);
@@ -23,8 +31,21 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         }
         break;
 
+    case WM_TRAY_MESSAGE:
+        if (trayManager)
+        {
+            return trayManager->HandleTrayMessage(wParam, lParam);
+        }
+        break;
+
     case WM_DESTROY:
+        CleanupApplication();
         PostQuitMessage(0);
+        return 0;
+
+    case WM_CLOSE:
+        // Pencereyi kapatma yerine gizle
+        ShowWindow(hWnd, SW_HIDE);
         return 0;
 
     default:
@@ -33,43 +54,93 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
     return 0;
 }
 
-// Tek instance kontrolü için atom
+// Tek instance kontrolü için mutex
 bool CheckInstanceRunning()
 {
-    static wchar_t szUniqueName[] = L"{LMWALLPAPER_UNIQUE_INSTANCE}";
+    static wchar_t szUniqueName[] = L"{LMWALLPAPER_UNIQUE_INSTANCE_2025}";
     HANDLE hMutex = CreateMutex(nullptr, TRUE, szUniqueName);
     if (GetLastError() == ERROR_ALREADY_EXISTS)
     {
-        CloseHandle(hMutex);
+        if (hMutex) CloseHandle(hMutex);
         return true;
     }
     return false;
 }
 
+void InitializeApplication()
+{
+    // COM başlatma
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    if (FAILED(hr))
+    {
+        ErrorHandler::LogError("COM başlatılamadı", ErrorLevel::CRITICAL);
+        return;
+    }
+
+    // GDI+ başlatma
+    InitializeGDIPlus();
+
+    // Bellek optimizatörü başlat
+    memoryOptimizer = std::make_unique<MemoryOptimizer>();
+
+    ErrorHandler::LogInfo("Uygulama başlatıldı", InfoLevel::INFO);
+}
+
+void CleanupApplication()
+{
+    ErrorHandler::LogInfo("Uygulama kapatılıyor", InfoLevel::INFO);
+
+    // Kaynakları temizle
+    trayManager.reset();
+    memoryOptimizer.reset();
+
+    // GDI+ kapatma
+    ShutdownGDIPlus();
+
+    // COM kapatma
+    CoUninitialize();
+}
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
     UNREFERENCED_PARAMETER(hPrevInstance);
-    UNREFERENCED_PARAMETER(lpCmdLine);
     UNREFERENCED_PARAMETER(nCmdShow);
+
+    // Komut satırı argümanlarını kontrol et
+    std::string cmdLine(lpCmdLine);
+    if (cmdLine.find("--uninstall") != std::string::npos)
+    {
+        // Uninstall işlemleri
+        HKEY hKey;
+        if (RegOpenKeyEx(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_WRITE, &hKey) == ERROR_SUCCESS)
+        {
+            RegDeleteValue(hKey, L"LMWallpaper");
+            RegCloseKey(hKey);
+        }
+        return 0;
+    }
 
     // Tek instance kontrolü
     if (CheckInstanceRunning())
     {
-        MessageBox(nullptr, L"LMWallpaper zaten çalışıyor.", L"Hata", MB_ICONERROR);
+        MessageBox(nullptr, L"LMWallpaper zaten çalışıyor.", L"Bilgi", MB_ICONINFORMATION);
         return 0;
     }
 
-    // Windows kayıt defteri kontrolü
+    // Uygulama başlatma
+    InitializeApplication();
+
+    // Windows kayıt defteri kontrolü (autostart)
     bool autoStart = false;
     HKEY hKey;
     if (RegOpenKeyEx(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_READ, &hKey) == ERROR_SUCCESS)
     {
         DWORD dataSize = 0;
-        RegQueryValueEx(hKey, L"LMWallpaper", nullptr, nullptr, nullptr, &dataSize);
-        RegCloseKey(hKey);
-        
-        if (dataSize != 0)
+        if (RegQueryValueEx(hKey, L"LMWallpaper", nullptr, nullptr, nullptr, &dataSize) == ERROR_SUCCESS && dataSize > 0)
+        {
             autoStart = true;
+        }
+        RegCloseKey(hKey);
     }
 
     // Ana pencere sınıfı kaydı
@@ -80,9 +151,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     wc.hInstance = hInstance;
     wc.lpszClassName = L"LMWallpaperClass";
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    RegisterClassEx(&wc);
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_LMWALLPAPER));
+    wc.hIconSm = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
-    // Ana pencere oluşturma
+    if (!RegisterClassEx(&wc))
+    {
+        ErrorHandler::LogError("Pencere sınıfı kayıt edilemedi", ErrorLevel::CRITICAL);
+        CleanupApplication();
+        return 1;
+    }
+
+    // Ana pencere oluşturma (gizli)
     hInst = hInstance;
     hWndMain = CreateWindowEx(
         WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
@@ -90,22 +170,51 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         L"LMWallpaper",
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT,
-        200, 150,
+        300, 200,
         nullptr,
         nullptr,
         hInstance,
         nullptr
     );
 
-    // Tray manager başlatma
-    trayManager = new TrayManager(hWndMain);
-    if (!trayManager->Initialize(autoStart))
+    if (!hWndMain)
     {
-        MessageBox(hWndMain, L"Sistem tepsisinde başlatma hatası!", L"Hata", MB_ICONERROR);
-        PostQuitMessage(0);
+        ErrorHandler::LogError("Ana pencere oluşturulamadı", ErrorLevel::CRITICAL);
+        CleanupApplication();
         return 1;
     }
 
+    // Pencereyi gizle (sadece sistem tepsisinde çalış)
+    ShowWindow(hWndMain, SW_HIDE);
+
+    // Tray manager başlatma
+    trayManager = std::make_unique<TrayManager>(hWndMain);
+    if (!trayManager->Initialize(autoStart))
+    {
+        MessageBox(hWndMain, L"Sistem tepsisinde başlatma hatası!", L"Hata", MB_ICONERROR);
+        CleanupApplication();
+        return 1;
+    }
+
+    // Install parametresi varsa autostart ayarla
+    if (cmdLine.find("--install") != std::string::npos || cmdLine.find("--autostart") != std::string::npos)
+    {
+        if (RegOpenKeyEx(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_WRITE, &hKey) == ERROR_SUCCESS)
+        {
+            wchar_t exePath[MAX_PATH];
+            GetModuleFileName(nullptr, exePath, MAX_PATH);
+            std::wstring startupValue = std::wstring(exePath) + L" --autostart";
+            
+            RegSetValueEx(hKey, L"LMWallpaper", 0, REG_SZ, 
+                         (BYTE*)startupValue.c_str(), 
+                         (DWORD)(startupValue.length() + 1) * sizeof(wchar_t));
+            RegCloseKey(hKey);
+        }
+    }
+
+    ErrorHandler::LogInfo("LMWallpaper başlatıldı", InfoLevel::INFO);
+
+    // Ana mesaj döngüsü
     MSG msg = {};
     while (GetMessage(&msg, nullptr, 0, 0))
     {
@@ -114,7 +223,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     }
 
     // Temizlik
-    delete trayManager;
+    CleanupApplication();
     UnregisterClass(L"LMWallpaperClass", hInstance);
-    return static_cast<int>(msg.wParams);
+    
+    return static_cast<int>(msg.wParam);
 }
