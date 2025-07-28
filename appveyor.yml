@@ -1,125 +1,80 @@
 version: 1.0.{build}
 image: Visual Studio 2022
 
-# Branch ayarları
 branches:
   only:
     - main
     - master
-    - develop
 
-# Build konfigürasyonu
 configuration: Release
 platform: x64
 
-# Environment variables
 environment:
   matrix:
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2022
 
-# Cache ayarları (build süresini kısaltır)
 cache:
   - build -> CMakeLists.txt
 
-# Build öncesi hazırlık
 before_build:
-  - echo "=== LMWallpaper Build Başlıyor ==="
+  - echo "=== LMWallpaper Build Basliyor ==="
   - echo "Build Worker: %APPVEYOR_BUILD_WORKER_IMAGE%"
   - echo "Configuration: %CONFIGURATION%"
   - echo "Platform: %PLATFORM%"
-  
-  # Visual Studio ortamını hazırla
   - call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
-  
-  # Önceki build kalıntılarını temizle
   - if exist build rmdir /s /q build
   - if exist CMakeCache.txt del CMakeCache.txt
-  
-  # Dosya varlığını kontrol et
   - dir *.cpp *.h
   - if not exist main.cpp (echo "HATA: main.cpp bulunamadi!" && exit /b 1)
 
-# Build scripti
 build_script:
-  - echo "=== CMake Yapılandırılıyor ==="
+  - echo "=== CMake Yapilandiriliyor ==="
   - mkdir build
   - cd build
-  
-  # CMake configure - en basit hali
   - cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release ..
-  
-  # Build
   - echo "=== Proje Derleniyor ==="
   - cmake --build . --config Release --verbose
-  
-  # Build sonuçlarını kontrol et
-  - echo "=== Build Sonuçları ==="
+  - echo "=== Build Sonuclari ==="
   - dir Release\*.exe
-  - if exist Release\LMWallpaper.exe (echo "✓ LMWallpaper.exe başarıyla oluşturuldu") else (echo "✗ LMWallpaper.exe bulunamadı" && exit /b 1)
+  - if exist Release\LMWallpaper.exe (echo "LMWallpaper.exe basariyla olusturuldu") else (echo "LMWallpaper.exe bulunamadi" && exit /b 1)
 
-# Test (opsiyonel)
 test_script:
-  - echo "=== Test Aşaması ==="
-  # Executable'ın çalıştığını test et
-  - Release\LMWallpaper.exe --help || echo "Executable test tamamlandı"
+  - echo "=== Test Asamasi ==="
+  - Release\LMWallpaper.exe --help || echo "Executable test tamamlandi"
 
-# Build sonrası
 after_build:
-  - echo "=== Artifact Hazırlanıyor ==="
+  - echo "=== Artifact Hazirlaniyor ==="
   - cd ..
-  
-  # Release klasörünü kopyala
   - mkdir artifact
   - xcopy build\Release\*.exe artifact\ /Y
-  - xcopy build\Release\*.dll artifact\ /Y 2>nul || echo "DLL bulunamadı"
-  - copy README.md artifact\ 2>nul || echo "README bulunamadı"
-  - copy LICENSE artifact\ 2>nul || echo "LICENSE bulunamadı"
-  
-  # Artifact içeriğini göster
-  - echo "Artifact içeriği:"
+  - xcopy build\Release\*.dll artifact\ /Y 2>nul || echo "DLL bulunamadi"
+  - copy README.md artifact\ 2>nul || echo "README bulunamadi"
+  - copy LICENSE artifact\ 2>nul || echo "LICENSE bulunamadi"
+  - echo "Artifact icerigi:"
   - dir artifact\
 
-# Artifact ayarları
 artifacts:
   - path: artifact\
     name: LMWallpaper-$(APPVEYOR_BUILD_VERSION)-Windows-x64
     type: zip
 
-# Deployment (GitHub Releases için)
-deploy:
-  - provider: GitHub
-    auth_token:
-      secure: YOUR_GITHUB_TOKEN_HERE # GitHub token'ınızı buraya ekleyin
-    artifact: LMWallpaper-$(APPVEYOR_BUILD_VERSION)-Windows-x64
-    description: 'LMWallpaper v$(APPVEYOR_BUILD_VERSION) - Otomatik build'
-    on:
-      branch: main
-      APPVEYOR_REPO_TAG: true
-
-# Bildirimler
 notifications:
   - provider: Email
     to:
-      - your-email@example.com # E-posta adresinizi buraya ekleyin
+      - your-email@example.com
     on_build_success: true
     on_build_failure: true
-    on_build_status_changed: true
 
-# Build başarısız olursa debug için
 on_failure:
-  - echo "=== Build Hatası Debug Bilgileri ==="
+  - echo "=== Build Hatasi Debug Bilgileri ==="
   - echo "CMake Version:"
   - cmake --version
   - echo "Visual Studio Version:"
   - where cl
-  - cl 2>&1
-  - echo "Build klasörü içeriği:"
+  - echo "Build klasoru icerigi:"
   - if exist build dir build /s
   - echo "CMake Error Logs:"
   - if exist build\CMakeFiles\CMakeError.log type build\CMakeFiles\CMakeError.log
-  - if exist build\CMakeFiles\CMakeOutput.log type build\CMakeFiles\CMakeOutput.log
 
-# Build başarılı olursa
 on_success:
-  - echo "=== Build Başarılı! ==="
-  - echo "Artifact URL: https://ci.appveyor.com/project/%APPVEYOR_ACCOUNT_NAME%/%APPVEYOR_PROJECT_SLUG%/builds/%APPVEYOR_BUILD_ID%/artifacts"
+  - echo "=== Build Basarili! ==="
