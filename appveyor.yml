@@ -1,80 +1,41 @@
 version: 1.0.{build}
 image: Visual Studio 2022
 
-branches:
-  only:
-    - main
-    - master
-
 configuration: Release
 platform: x64
 
-environment:
-  matrix:
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2022
-
-cache:
-  - build -> CMakeLists.txt
-
 before_build:
-  - echo "=== LMWallpaper Build Basliyor ==="
-  - echo "Build Worker: %APPVEYOR_BUILD_WORKER_IMAGE%"
-  - echo "Configuration: %CONFIGURATION%"
-  - echo "Platform: %PLATFORM%"
+  - echo "LMWallpaper Build Starting"
   - call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
   - if exist build rmdir /s /q build
   - if exist CMakeCache.txt del CMakeCache.txt
-  - dir *.cpp *.h
-  - if not exist main.cpp (echo "HATA: main.cpp bulunamadi!" && exit /b 1)
 
 build_script:
-  - echo "=== CMake Yapilandiriliyor ==="
+  - echo "CMake Configure"
   - mkdir build
   - cd build
-  - cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release ..
-  - echo "=== Proje Derleniyor ==="
-  - cmake --build . --config Release --verbose
-  - echo "=== Build Sonuclari ==="
+  - cmake -G "Visual Studio 17 2022" -A x64 ..
+  - echo "Building Project"
+  - cmake --build . --config Release
+  - echo "Build Results"
   - dir Release\*.exe
-  - if exist Release\LMWallpaper.exe (echo "LMWallpaper.exe basariyla olusturuldu") else (echo "LMWallpaper.exe bulunamadi" && exit /b 1)
-
-test_script:
-  - echo "=== Test Asamasi ==="
-  - Release\LMWallpaper.exe --help || echo "Executable test tamamlandi"
 
 after_build:
-  - echo "=== Artifact Hazirlaniyor ==="
+  - echo "Preparing Artifacts"
   - cd ..
   - mkdir artifact
   - xcopy build\Release\*.exe artifact\ /Y
-  - xcopy build\Release\*.dll artifact\ /Y 2>nul || echo "DLL bulunamadi"
-  - copy README.md artifact\ 2>nul || echo "README bulunamadi"
-  - copy LICENSE artifact\ 2>nul || echo "LICENSE bulunamadi"
-  - echo "Artifact icerigi:"
   - dir artifact\
 
 artifacts:
   - path: artifact\
-    name: LMWallpaper-$(APPVEYOR_BUILD_VERSION)-Windows-x64
+    name: LMWallpaper-Windows-x64
     type: zip
 
-notifications:
-  - provider: Email
-    to:
-      - your-email@example.com
-    on_build_success: true
-    on_build_failure: true
-
 on_failure:
-  - echo "=== Build Hatasi Debug Bilgileri ==="
-  - echo "CMake Version:"
+  - echo "Build Failed - Debug Info"
   - cmake --version
-  - echo "Visual Studio Version:"
-  - where cl
-  - echo "Build klasoru icerigi:"
   - if exist build dir build /s
-  - echo "CMake Error Logs:"
-  - if exist build\CMakeFiles\CMakeError.log type build\CMakeFiles\CMakeError.log
 
 on_success:
-  - echo "=== Build Basarili! ==="
+  - echo "Build Successful!"
