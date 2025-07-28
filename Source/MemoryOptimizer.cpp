@@ -5,225 +5,132 @@
 MemoryOptimizer::MemoryOptimizer() 
     : currentMemoryUsage(0)
     , peakMemoryUsage(0)
-    , memoryLimit(150 * 1024 * 1024)  // 150MB limit
-    , isRunning(false) {
+    , memoryLimit(200 * 1024 * 1024) // 200MB default limit
+    , isRunning(true) {
     
-    // Otomatik temizleme thread'i başlat
-    isRunning = true;
+    // Başlangıç bellek kullanımını ölç
+    MonitorMemoryUsage();
+    
+    // Cleanup thread'ini başlat
     cleanupThread = std::make_unique<std::thread>(&MemoryOptimizer::CleanupLoop, this);
+    
+    ErrorHandler::LogInfo("MemoryOptimizer başlatıldı", InfoLevel::INFO);
 }
 
 MemoryOptimizer::~MemoryOptimizer() {
     isRunning = false;
+    
     if (cleanupThread && cleanupThread->joinable()) {
         cleanupThread->join();
     }
+    
+    ErrorHandler::LogInfo("MemoryOptimizer sonlandırıldı", InfoLevel::INFO);
 }
 
-void MemoryOptimizer::AutoCleanup() {
-    try {
-        // Bellek kullanımını kontrol et
-        size_t currentUsage = GetCurrentMemoryUsage();
+void MemoryOptimizer::MonitorMemoryUsage() {
+    PROCESS_MEMORY_COUNTERS pmc;
+    if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
+        size_t current = pmc.WorkingSetSize;
+        currentMemoryUsage = current;
         
-        // Bellek limitini aşarsa temizlik yap
-        if (currentUsage > memoryLimit) {
-            ErrorHandler::LogInfo("Bellek limiti aşıldı, temizlik yapılıyor: " + 
-                                std::to_string(currentUsage / (1024 * 1024)) + " MB", 
-                                InfoLevel::DEBUG);
-            
-            ClearUnusedFrames();
-            DynamicBufferResize();
-            
-            // Temizlik sonrası kontrol
-            currentUsage = GetCurrentMemoryUsage();
-            ErrorHandler::LogInfo("Temizlik sonrası bellek kullanımı: " + 
-                                std::to_string(currentUsage / (1024 * 1024)) + " MB", 
-                                InfoLevel::DEBUG);
+        if (current > peakMemoryUsage) {
+            peakMemoryUsage = current;
         }
         
-        // Peak bellek kullanımını güncelle
-        if (currentUsage > peakMemoryUsage) {
-            peakMemoryUsage = currentUsage;
+        // Bellek kullanımını log'la (sadece önemli değişiklikler)
+        static size_t lastLogged = 0;
+        if (current > lastLogged + (10 * 1024 * 1024) || current < lastLogged - (10 * 1024 * 1024)) {
+            double memoryMB = current / (1024.0 * 1024.0);
+            ErrorHandler::LogInfo("Bellek kullanımı: " + std::to_string(static_cast<int>(memoryMB)) + " MB", InfoLevel::TRACE);
+            lastLogged = current;
         }
-    }
-    catch (const std::exception& e) {
-        ErrorHandler::LogError("Otomatik temizleme hatası: " + std::string(e.what()),
-                             ErrorLevel::WARNING);
-    }
-}
-
-void MemoryOptimizer::ClearUnusedFrames() {
-    try {
-        std::lock_guard<std::mutex> lock(mutex);
-        
-        // Tüm video oynatıcılarından kullanılmayan frame'leri temizle
-        auto& instances = VideoPlayer::GetAllInstances();
-        for (auto* player : instances) {
-            if (player) {
-                player->ClearUnusedFrames();
-            }
-        }
-        
-        // Bellek kullanımını güncelle
-        currentMemoryUsage = GetCurrentMemoryUsage();
-        
-        // Windows bellek temizliği
-        SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
-        
-        ErrorHandler::LogInfo("Frame temizliği tamamlandı", InfoLevel::DEBUG);
-    }
-    catch (const std::exception& e) {
-        ErrorHandler::LogError("Frame temizleme hatası: " + std::string(e.what()),
-                             ErrorLevel::WARNING);
-    }
-}
-
-void MemoryOptimizer::DynamicBufferResize() {
-    try {
-        // Sistem bellek durumuna göre buffer boyutunu ayarla
-        MEMORYSTATUSEX memInfo;
-        memInfo.dwLength = sizeof(MEMORYSTATUSEX);
-        if (!GlobalMemoryStatusEx(&memInfo)) {
-            ErrorHandler::LogError("Sistem bellek bilgisi alınamadı", ErrorLevel::WARNING);
-            return;
-        }
-        
-        double availableMemoryMB = memInfo.ullAvailPhys / (1024.0 * 1024.0);
-        double memoryUsagePercent = (double)(memInfo.ullTotalPhys - memInfo.ullAvailPhys) * 100.0 / memInfo.ullTotalPhys;
-        
-        // Bellek kullanım yüzdesine göre buffer boyutunu ayarla
-        int newBufferSize;
-        if (memoryUsagePercent > 85.0) {
-            newBufferSize = 1;  // Çok yüksek kullanım - minimum buffer
-            ErrorHandler::LogInfo("Sistem belleği kritik seviyede (%85+), buffer boyutu minimize edildi", InfoLevel::WARNING);
-        }
-        else if (memoryUsagePercent > 70.0) {
-            newBufferSize = 2;  // Yüksek kullanım - küçük buffer
-            ErrorHandler::LogInfo("Sistem belleği yüksek seviyede (%70+), buffer boyutu azaltıldı", InfoLevel::INFO);
-        }
-        else if (availableMemoryMB < 512.0) {
-            newBufferSize = 2;  // 512MB altı - küçük buffer
-        }
-        else if (availableMemoryMB < 1024.0) {
-            newBufferSize = 3;  // 1GB altı - orta buffer
-        }
-        else {
-            newBufferSize = 5;  // Normal buffer boyutu
-        }
-        
-        VideoPlayer::SetMaxBufferFrames(newBufferSize);
-        
-        ErrorHandler::LogInfo("Buffer boyutu ayarlandı: " + std::to_string(newBufferSize) + 
-                            " (Kullanılabilir bellek: " + std::to_string((int)availableMemoryMB) + " MB)", 
-                            InfoLevel::DEBUG);
-    }
-    catch (const std::exception& e) {
-        ErrorHandler::LogError("Buffer boyutu ayarlama hatası: " + std::string(e.what()),
-                             ErrorLevel::WARNING);
     }
 }
 
 size_t MemoryOptimizer::GetCurrentMemoryUsage() {
-    PROCESS_MEMORY_COUNTERS_EX pmc;
-    if (GetProcessMemoryInfo(GetCurrentProcess(), 
-                            (PROCESS_MEMORY_COUNTERS*)&pmc, 
-                            sizeof(pmc))) {
-        currentMemoryUsage = pmc.WorkingSetSize;
-        return currentMemoryUsage;
-    }
-    
-    ErrorHandler::LogError("Bellek kullanım bilgisi alınamadı", ErrorLevel::WARNING);
-    return 0;
+    MonitorMemoryUsage();
+    return currentMemoryUsage;
 }
 
-void MemoryOptimizer::CleanupLoop() {
-    ErrorHandler::LogInfo("Bellek temizleme döngüsü başlatıldı", InfoLevel::DEBUG);
+void MemoryOptimizer::AutoCleanup() {
+    MonitorMemoryUsage();
     
-    while (isRunning) {
-        try {
-            // Her 30 saniyede bir bellek kontrolü yap
-            for (int i = 0; i < 30 && isRunning; ++i) {
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-            }
-            
-            if (!isRunning) break;
-            
-            // Bellek kullanımını monitor et
-            MonitorMemoryUsage();
-            
-            // Gerektiğinde optimizasyon yap
-            OptimizeMemoryAllocation();
-            
-            // Otomatik temizlik
-            AutoCleanup();
-        }
-        catch (const std::exception& e) {
-            ErrorHandler::LogError("Temizlik döngüsü hatası: " + std::string(e.what()),
-                                 ErrorLevel::WARNING);
-        }
-    }
-    
-    ErrorHandler::LogInfo("Bellek temizleme döngüsü sonlandırıldı", InfoLevel::DEBUG);
-}
-
-void MemoryOptimizer::MonitorMemoryUsage() {
-    size_t currentUsage = GetCurrentMemoryUsage();
-    
-    // Bellek kullanımını logla (sadece önemli değişikliklerde)
-    static size_t lastLoggedUsage = 0;
-    size_t usageDifference = currentUsage > lastLoggedUsage ? 
-                            currentUsage - lastLoggedUsage : 
-                            lastLoggedUsage - currentUsage;
-    
-    // 10MB'dan fazla değişiklik varsa logla
-    if (usageDifference > 10 * 1024 * 1024) {
-        ErrorHandler::LogInfo("Bellek kullanımı: " + 
-                            std::to_string(currentUsage / (1024 * 1024)) + " MB",
-                            InfoLevel::DEBUG);
-        lastLoggedUsage = currentUsage;
-    }
-    
-    // Peak değeri güncelle
-    if (currentUsage > peakMemoryUsage) {
-        peakMemoryUsage = currentUsage;
-        ErrorHandler::LogInfo("Yeni peak bellek kullanımı: " + 
-                            std::to_string(currentUsage / (1024 * 1024)) + " MB",
-                            InfoLevel::INFO);
-    }
-    
-    // Kritik seviye kontrolü
-    if (currentUsage > memoryLimit * 1.5) {  // %150 limit aşımı
-        ErrorHandler::LogError("Kritik bellek kullanımı tespit edildi: " + 
-                             std::to_string(currentUsage / (1024 * 1024)) + " MB",
-                             ErrorLevel::WARNING);
+    if (currentMemoryUsage > memoryLimit) {
+        ErrorHandler::LogInfo("Bellek limiti aşıldı, otomatik temizlik başlatılıyor", InfoLevel::WARNING);
         
-        // Acil temizlik yap
         ClearUnusedFrames();
         DynamicBufferResize();
+        OptimizeMemoryAllocation();
+        
+        // Sistem seviyesinde temizlik
+        SetProcessWorkingSetSize(GetCurrentProcess(), -1, -1);
+        
+        MonitorMemoryUsage();
+        double memoryMB = currentMemoryUsage / (1024.0 * 1024.0);
+        ErrorHandler::LogInfo("Temizlik sonrası bellek kullanımı: " + std::to_string(static_cast<int>(memoryMB)) + " MB", InfoLevel::INFO);
+    }
+}
+
+void MemoryOptimizer::ClearUnusedFrames() {
+    std::lock_guard<std::mutex> lock(mutex);
+    
+    // Tüm VideoPlayer instance'larındaki kullanılmayan frame'leri temizle
+    auto& instances = VideoPlayer::GetAllInstances();
+    for (auto* player : instances) {
+        if (player) {
+            player->ClearUnusedFrames();
+        }
+    }
+    
+    ErrorHandler::LogInfo("Kullanılmayan frame'ler temizlendi", InfoLevel::DEBUG);
+}
+
+void MemoryOptimizer::DynamicBufferResize() {
+    MonitorMemoryUsage();
+    
+    // Bellek kullanımına göre buffer boyutunu ayarla
+    if (currentMemoryUsage > memoryLimit * 0.8) { // %80'i aşınca
+        VideoPlayer::SetMaxBufferFrames(2); // Buffer boyutunu küçült
+        ErrorHandler::LogInfo("Buffer boyutu küçültüldü (2 frame)", InfoLevel::DEBUG);
+    } else if (currentMemoryUsage < memoryLimit * 0.5) { // %50'nin altındaysa
+        VideoPlayer::SetMaxBufferFrames(5); // Buffer boyutunu büyüt
+        ErrorHandler::LogInfo("Buffer boyutu büyütüldü (5 frame)", InfoLevel::DEBUG);
+    } else {
+        VideoPlayer::SetMaxBufferFrames(3); // Normal boyut
     }
 }
 
 void MemoryOptimizer::OptimizeMemoryAllocation() {
-    try {
-        // Windows'un çalışan küme boyutunu optimize et
-        SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
-        
-        // COM bellek temizliği
-        CoFreeUnusedLibraries();
-        
-        // Heap compaction (Windows 10+)
-        HANDLE hHeap = GetProcessHeap();
-        if (hHeap) {
-            HeapCompact(hHeap, 0);
+    // Windows heap defragmentasyonu
+    HANDLE hHeap = GetProcessHeap();
+    if (hHeap) {
+        HeapCompact(hHeap, 0);
+    }
+    
+    // C++ heap'i optimize et
+    #ifdef _MSC_VER
+    _heapmin();
+    #endif
+    
+    ErrorHandler::LogInfo("Bellek tahsisi optimize edildi", InfoLevel::DEBUG);
+}
+
+void MemoryOptimizer::CleanupLoop() {
+    const auto cleanupInterval = std::chrono::seconds(10); // 10 saniyede bir kontrol
+    
+    ErrorHandler::LogInfo("MemoryOptimizer cleanup thread başladı", InfoLevel::DEBUG);
+    
+    while (isRunning) {
+        try {
+            AutoCleanup();
+            
+            std::this_thread::sleep_for(cleanupInterval);
+            
+        } catch (const std::exception& e) {
+            ErrorHandler::LogError("MemoryOptimizer cleanup hatası: " + std::string(e.what()), ErrorLevel::ERROR);
+            std::this_thread::sleep_for(std::chrono::seconds(30)); // Hata durumunda daha uzun bekle
         }
-        
-        // GDI nesnelerini temizle
-        GdiFlush();
-        
-        ErrorHandler::LogInfo("Bellek optimizasyonu tamamlandı", InfoLevel::DEBUG);
     }
-    catch (const std::exception& e) {
-        ErrorHandler::LogError("Bellek optimizasyonu hatası: " + std::string(e.what()),
-                             ErrorLevel::WARNING);
-    }
+    
+    ErrorHandler::LogInfo("MemoryOptimizer cleanup thread sonlandı", InfoLevel::DEBUG);
 }

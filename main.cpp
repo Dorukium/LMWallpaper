@@ -1,6 +1,6 @@
 // main.cpp
 #include "framework.h"
-#include "resource.h"
+#include "Headers/resource.h"
 #include "Headers/TrayManager.h"
 #include "Headers/ErrorHandler.h"
 #include "Headers/MemoryOptimizer.h"
@@ -78,10 +78,19 @@ void InitializeApplication()
     }
 
     // GDI+ başlatma
-    InitializeGDIPlus();
+    Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+    ULONG_PTR gdiplusToken;
+    Gdiplus::Status status = Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, nullptr);
+    if (status != Gdiplus::Ok) {
+        ErrorHandler::LogError("GDI+ başlatılamadı", ErrorLevel::ERROR);
+    }
 
     // Bellek optimizatörü başlat
-    memoryOptimizer = std::make_unique<MemoryOptimizer>();
+    try {
+        memoryOptimizer = std::make_unique<MemoryOptimizer>();
+    } catch (const std::exception& e) {
+        ErrorHandler::LogError("MemoryOptimizer başlatılamadı: " + std::string(e.what()), ErrorLevel::ERROR);
+    }
 
     ErrorHandler::LogInfo("Uygulama başlatıldı", InfoLevel::INFO);
 }
@@ -95,10 +104,13 @@ void CleanupApplication()
     memoryOptimizer.reset();
 
     // GDI+ kapatma
-    ShutdownGDIPlus();
+    Gdiplus::GdiplusShutdown(0); // Token burada sabit 0 kullanılıyor
 
     // COM kapatma
     CoUninitialize();
+    
+    // ErrorHandler cleanup
+    ErrorHandler::Cleanup();
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
@@ -188,10 +200,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     ShowWindow(hWndMain, SW_HIDE);
 
     // Tray manager başlatma
-    trayManager = std::make_unique<TrayManager>(hWndMain);
-    if (!trayManager->Initialize(autoStart))
-    {
-        MessageBox(hWndMain, L"Sistem tepsisinde başlatma hatası!", L"Hata", MB_ICONERROR);
+    try {
+        trayManager = std::make_unique<TrayManager>(hWndMain);
+        if (!trayManager->Initialize(autoStart))
+        {
+            MessageBox(hWndMain, L"Sistem tepsisinde başlatma hatası!", L"Hata", MB_ICONERROR);
+            CleanupApplication();
+            return 1;
+        }
+    } catch (const std::exception& e) {
+        ErrorHandler::LogError("TrayManager başlatılamadı: " + std::string(e.what()), ErrorLevel::CRITICAL);
         CleanupApplication();
         return 1;
     }

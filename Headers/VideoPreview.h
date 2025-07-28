@@ -29,6 +29,8 @@ private:
     static const int THUMBNAIL_SIZE = 128; // Mini resim boyutu (128x128)
 
     bool CreateThumbnailWithDirectShow(const std::wstring& videoPath, const std::wstring& outputPath);
+    bool SaveBitmapToFile(HBITMAP hBitmap, const std::wstring& filePath);
+    int GetEncoderClsid(const WCHAR* format, CLSID* pClsid);
 
 public:
     VideoPreview();
