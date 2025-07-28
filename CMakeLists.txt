@@ -18,7 +18,6 @@ endif()
 
 # Derleyici bayrakları
 if(MSVC)
-    # Visual Studio bayrakları
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX- /permissive-")
     
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -32,19 +31,20 @@ else()
     message(FATAL_ERROR "Bu proje MSVC derleyicisi gerektirir")
 endif()
 
-# Kaynak dosyaları - sadece mevcut olanlar
+# Temel kaynak dosyaları
 set(SOURCES
     main.cpp
     Logger.cpp
 )
 
+# Temel header dosyaları
 set(HEADERS
     framework.h
     targetvar.h
     Logger.h
 )
 
-# Header dosyalarını kontrol et
+# Opsiyonel header dosyaları
 set(OPTIONAL_HEADERS
     Headers/resource.h
     Headers/ErrorHandler.h
@@ -61,10 +61,13 @@ set(OPTIONAL_HEADERS
 foreach(header ${OPTIONAL_HEADERS})
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${header}")
         list(APPEND HEADERS ${header})
+        message(STATUS "Header eklendi: ${header}")
+    else()
+        message(STATUS "Header bulunamadi: ${header}")
     endif()
 endforeach()
 
-# Source dosyalarını kontrol et ve ekle
+# Opsiyonel source dosyaları
 set(OPTIONAL_SOURCES
     Source/TrayManager.cpp
     Source/VideoPlayer.cpp
@@ -80,6 +83,9 @@ set(OPTIONAL_SOURCES
 foreach(source ${OPTIONAL_SOURCES})
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
         list(APPEND SOURCES ${source})
+        message(STATUS "Source eklendi: ${source}")
+    else()
+        message(STATUS "Source bulunamadi: ${source}")
     endif()
 endforeach()
 
@@ -98,7 +104,7 @@ set(WIN_LIBS
     psapi
 )
 
-# DirectX/Media Foundation kütüphaneleri - opsiyonel
+# DirectX/Media Foundation kütüphaneleri
 set(OPTIONAL_LIBS
     d2d1
     dwrite
@@ -112,8 +118,11 @@ set(OPTIONAL_LIBS
     gdiplus
 )
 
-# Executable oluştur
-add_executable(LMWallpaper WIN32 ${SOURCES} ${HEADERS})
+# Executable oluştur - sadece source dosyaları
+add_executable(LMWallpaper WIN32 ${SOURCES})
+
+# Header dosyalarını target'a ekle (compile edilmeyecek)
+target_sources(LMWallpaper PRIVATE ${HEADERS})
 
 # Temel Windows kütüphanelerini bağla
 target_link_libraries(LMWallpaper ${WIN_LIBS})
@@ -125,7 +134,7 @@ foreach(lib ${OPTIONAL_LIBS})
         target_link_libraries(LMWallpaper ${lib})
         message(STATUS "Kütüphane bulundu: ${lib}")
     else()
-        message(WARNING "Kütüphane bulunamadı: ${lib}")
+        message(STATUS "Kütüphane bulunamadı: ${lib}")
     endif()
 endforeach()
 
@@ -166,13 +175,6 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/LMWallpaper.rc")
     message(STATUS "Resource dosyası eklendi")
 endif()
 
-# Manifest dosyası kontrolü
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/LMWallpaper.manifest")
-    set_target_properties(LMWallpaper PROPERTIES
-        LINK_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/LMWallpaper.manifest"
-    )
-endif()
-
 # Output dizini ayarları
 set_target_properties(LMWallpaper PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
@@ -180,31 +182,10 @@ set_target_properties(LMWallpaper PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin/Release"
 )
 
-# Post-build komutları
-add_custom_command(TARGET LMWallpaper POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:LMWallpaper>
-    COMMENT "Output dizini oluşturuluyor"
-)
-
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
-    add_custom_command(TARGET LMWallpaper POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
-        $<TARGET_FILE_DIR:LMWallpaper>
-        COMMENT "README dosyası kopyalanıyor"
-    )
-endif()
-
-# CPack ayarları (installer için)
-set(CPACK_PACKAGE_NAME "LMWallpaper")
-set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Dynamic Wallpaper Application")
-set(CPACK_PACKAGE_VENDOR "LMWallpaper Team")
-
 # Bilgi mesajları
 message(STATUS "=== LMWallpaper Build Configuration ===")
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
-message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "Source Files: ${SOURCES}")
+message(STATUS "Header Files: ${HEADERS}")
 message(STATUS "=======================================")
