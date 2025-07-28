@@ -22,7 +22,7 @@ endif()
 
 # Kaynak dosyaları
 set(SOURCES
-    Source/main.cpp
+    main.cpp
     Source/TrayManager.cpp
     Source/VideoPlayer.cpp
     Source/VideoPreview.cpp
