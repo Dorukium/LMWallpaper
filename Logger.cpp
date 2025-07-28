@@ -1,46 +1,65 @@
-// Logger.cpp
 #include "Logger.h"
-#include <fstream>
-#include <mutex>
-#include <chrono>
-#include <fmt/format.h>
+#include <locale>
+#include <codecvt>
 
-std::mutex Logger::mutex_;
-std::ofstream Logger::fileLog_;
+// NOTE: Removed dependency on external 'fmt' library.
+// Using standard C++ libraries for logging.
 
-void Logger::initialize() {
-    fileLog_.open("log.txt", std::ios::app);
-    if (!fileLog_.is_open()) {
-        throw std::runtime_error("Log dosyası açılamadı");
+Logger& Logger::GetInstance() {
+    static Logger instance;
+    return instance;
+}
+
+Logger::Logger() {
+    // Default constructor
+}
+
+Logger::~Logger() {
+    if (m_logFile.is_open()) {
+        m_logFile.close();
     }
 }
 
-void Logger::log(const std::string& message, LogLevel level) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto timestamp = getCurrentTime();
-    fileLog_ << fmt::format("[{}] {}: {}\n", 
-        timestamp, getLogLevelString(level), message);
-    fileLog_.flush();
+void Logger::Log(const std::string& message, LogLevel level) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    LogEntry entry{ level, message, std::chrono::system_clock::now() };
+    m_history.push_back(entry);
+    WriteToFile(entry);
 }
 
-std::string Logger::getCurrentTime() {
-    auto now = std::chrono::system_clock::now();
-    auto now_time = std::chrono::system_clock::to_time_t(now);
-    auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now.time_since_epoch()) % 1000;
-    char timestamp[32];
-    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", 
-        localtime(&now_time));
-    return fmt::format("{}.{:03d}", timestamp, static_cast<int>(now_ms.count()));
+void Logger::Log(const std::wstring& message, LogLevel level) {
+    std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+    Log(converter.to_bytes(message), level);
 }
 
-std::string Logger::getLogLevelString(LogLevel level) {
-    switch (level) {
-        case DEBUG: return "DEBUG";
-        case INFO: return "INFO";
-        case WARNING: return "WARNING";
-        case ERROR: return "ERROR";
-        case CRITICAL: return "CRITICAL";
-        default: return "UNKNOWN";
+const std::vector<LogEntry>& Logger::GetHistory() const {
+    return m_history;
+}
+
+void Logger::SetLogFile(const std::string& filePath) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_logFile.is_open()) {
+        m_logFile.close();
     }
+    m_logFile.open(filePath, std::ios_base::app);
+}
+
+void Logger::WriteToFile(const LogEntry& entry) {
+    if (!m_logFile.is_open()) return;
+
+    std::string levelStr;
+    switch (entry.level) {
+    case LogLevel::INFO:    levelStr = "INFO"; break;
+    case LogLevel::WARNING: levelStr = "WARNING"; break;
+    case LogLevel::ERROR:   levelStr = "ERROR"; break;
+    }
+
+    auto time_t = std::chrono::system_clock::to_time_t(entry.timestamp);
+    struct tm timeinfo;
+    localtime_s(&timeinfo, &time_t);
+
+    std::stringstream ss;
+    ss << std::put_time(&timeinfo, "%Y-%m-%d %H:%M:%S");
+
+    m_logFile << "[" << ss.str() << "] [" << levelStr << "] " << entry.message << std::endl;
 }

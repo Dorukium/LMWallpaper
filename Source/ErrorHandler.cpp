@@ -30,13 +30,16 @@ void ErrorHandler::HandleError(const std::wstring& errorMessage, ErrorLevel leve
 
 void ErrorHandler::HandleError(HRESULT hr, const std::string& functionName, ErrorLevel level) {
     _com_error err(hr);
-    std::string errorMessage = functionName + " failed with HRESULT: " + std::to_string(hr) + " - " + err.ErrorMessage();
+    // NOTE: err.ErrorMessage() returns a TCHAR*, which needs to be converted for std::string
+    std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+    std::string errorMessage = functionName + " failed with HRESULT: " + std::to_string(hr) + " - " + converter.to_bytes(err.ErrorMessage());
     HandleError(errorMessage, level);
 }
 
 void ErrorHandler::HandleError(HRESULT hr, const std::wstring& functionName, ErrorLevel level) {
     _com_error err(hr);
-    std::wstring errorMessage = functionName + L" failed with HRESULT: " + std::to_wstring(hr) + L" - " + err.ErrorMessage();
+    // NOTE: Explicitly cast the result of err.ErrorMessage() to const wchar_t* for concatenation.
+    std::wstring errorMessage = functionName + L" failed with HRESULT: " + std::to_wstring(hr) + L" - " + (const wchar_t*)err.ErrorMessage();
     HandleError(errorMessage, level);
 }
 
@@ -57,8 +60,6 @@ void ErrorHandler::LogError(const Error& error) {
     }
 
     auto time_t = std::chrono::system_clock::to_time_t(error.timestamp);
-    
-    // NOTE: Using safer localtime_s instead of localtime
     struct tm timeinfo;
     localtime_s(&timeinfo, &time_t);
 

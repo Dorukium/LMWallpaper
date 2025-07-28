@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <mutex>
 
+// NOTE: Removed dependency on external 'fmt' library.
 enum class LogLevel {
     INFO,
     WARNING,

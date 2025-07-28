@@ -8,9 +8,10 @@
 #include <sstream>
 #include <iomanip>
 #include <mutex>
+// NOTE: Added <windows.h> to define HRESULT and other Windows types.
+#include <windows.h>
 
-// NOTE: Changed to 'enum class' for type safety and scoping.
-// Added a semicolon at the end. This fixes numerous compilation errors.
+
 enum class ErrorLevel {
     INFO,
     WARNING,

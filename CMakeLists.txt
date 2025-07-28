@@ -20,7 +20,7 @@ if(DEFINED ENV{VCPKG_ROOT})
     set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "Vcpkg toolchain file")
 endif()
 
-# Include directories
+# Include directories for root and Headers
 include_directories(.)
 include_directories(./Headers)
 
@@ -45,6 +45,7 @@ function(check_and_add_source source_file source_list)
 endfunction()
 
 # Gather header files
+# NOTE: Removed duplicate Headers/framework.h and corrected pathing logic.
 set(header_files "")
 check_and_add_header("framework.h" header_files)
 check_and_add_header("targetvar.h" header_files)
@@ -58,8 +59,6 @@ check_and_add_header("Headers/MemoryOptimizer.h" header_files)
 check_and_add_header("Headers/ImageProcessor.h" header_files)
 check_and_add_header("Headers/SettingsWindow.h" header_files)
 check_and_add_header("Headers/ThemeManager.h" header_files)
-# NOTE: Removed non-existent MonitorManager.h
-# check_and_add_header("Headers/MonitorManager.h" header_files) 
 
 # Gather source files
 set(source_files "main.cpp" "Logger.cpp")
@@ -69,9 +68,6 @@ check_and_add_source("Source/VideoPreview.cpp" source_files)
 check_and_add_source("Source/MemoryOptimizer.cpp" source_files)
 check_and_add_source("Source/ImageProcessor.cpp" source_files)
 check_and_add_source("Source/SettingsWindow.cpp" source_files)
-# NOTE: Removed non-existent source files
-# check_and_add_source("Source/ThemeManager.cpp" source_files)
-# check_and_add_source("Source/MonitorManager.cpp" source_files)
 check_and_add_source("Source/ErrorHandler.cpp" source_files)
 
 # Add executable
