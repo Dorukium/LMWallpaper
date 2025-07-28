@@ -35,7 +35,16 @@ endif()
 # Kaynak dosyaları - sadece mevcut olanlar
 set(SOURCES
     main.cpp
+<<<<<<< HEAD
     Logger.cpp
+=======
+    Source/TrayManager.cpp
+    Source/VideoPlayer.cpp
+    Source/VideoPreview.cpp
+    Source/MemoryOptimizer.cpp
+    Source/ImageProcessor.cpp
+    Source/SettingsWindow.cpp
+>>>>>>> 019b354de559013cc7555c9cebcc8dc530f2be3f
 )
 
 set(HEADERS
@@ -182,6 +191,7 @@ set_target_properties(LMWallpaper PROPERTIES
 
 # Post-build komutları
 add_custom_command(TARGET LMWallpaper POST_BUILD
+<<<<<<< HEAD
     COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:LMWallpaper>
     COMMENT "Output dizini oluşturuluyor"
 )
@@ -220,3 +230,9 @@ message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "Source Files: ${SOURCES}")
 message(STATUS "=======================================")
+=======
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
+    $<TARGET_FILE_DIR:LMWallpaper>
+)
+>>>>>>> 019b354de559013cc7555c9cebcc8dc530f2be3f
