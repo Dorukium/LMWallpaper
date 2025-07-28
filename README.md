@@ -4,38 +4,27 @@ LMWallpaper is a lightweight, customizable wallpaper application designed to enh
 
 ## Features
 
-- Support for dynamic and static wallpapers
-- Easy-to-use interface
-- Lightweight and minimal resource usage
-- Customizable settings for wallpaper display and behavior
-- Cross-platform compatibility (if applicable)
+- Support for dynamic and static wallpapers  
+- Easy-to-use interface  
+- Lightweight and minimal resource usage  
+- Customizable settings for wallpaper display and behavior  
+- Cross-platform compatibility (if applicable)  
 
 ## Installation
 
-1. Clone the repository:
+1. Clone the repository:  
    ```bash
    git clone https://github.com/Dorukium/LMWallpaper.git
-Navigate to the project directory:
-
-bash
-Kopyala
-Düzenle
-cd LMWallpaper
-Follow platform-specific build or installation instructions (add here if any, e.g., npm install, make, etc.)
+2. Navigate to the project directory:
+   ```bash
+   LMWallpaper
+3. Follow platform-specific build or installation instructions (if any).
 
 Usage
-Provide instructions on how to run the app or launch the wallpaper manager, e.g.:
-
-bash
-Kopyala
-Düzenle
+Run the application or use the provided interface to set and manage wallpapers. For example:
+```bash
 ./lmwallpaper
-Or explain how to set wallpapers through the UI.
 
-Contributing
-Contributions are welcome! Feel free to open issues or submit pull requests to improve functionality, fix bugs, or add new features.
 
-License
-This project is licensed under the MIT License. See the LICENSE file for details.
 
-Made with ❤️ by Dorukium
+ 
