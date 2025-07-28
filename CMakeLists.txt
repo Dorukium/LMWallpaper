@@ -15,6 +15,10 @@ project(LMWallpaper VERSION 1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# NOTE: Add compile definitions for Unicode support.
+# This fixes all wide-char (L"...") vs. multi-byte API call errors.
+add_compile_definitions(LMWallpaper PRIVATE UNICODE _UNICODE)
+
 # Vcpkg toolchain setup
 if(DEFINED ENV{VCPKG_ROOT})
     set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "Vcpkg toolchain file")
@@ -45,7 +49,6 @@ function(check_and_add_source source_file source_list)
 endfunction()
 
 # Gather header files
-# NOTE: Removed duplicate Headers/framework.h and corrected pathing logic.
 set(header_files "")
 check_and_add_header("framework.h" header_files)
 check_and_add_header("targetvar.h" header_files)
