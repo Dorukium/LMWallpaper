@@ -20,10 +20,6 @@ if(DEFINED ENV{VCPKG_ROOT})
     set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "Vcpkg toolchain file")
 endif()
 
-# Find required packages
-# NOTE: Added fmt package which was missing for the Logger.
-find_package(fmt CONFIG REQUIRED)
-
 # Include directories
 include_directories(.)
 include_directories(./Headers)
@@ -71,8 +67,6 @@ check_and_add_source("Source/TrayManager.cpp" source_files)
 check_and_add_source("Source/VideoPlayer.cpp" source_files)
 check_and_add_source("Source/VideoPreview.cpp" source_files)
 check_and_add_source("Source/MemoryOptimizer.cpp" source_files)
-# NOTE: Corrected typo from "ImageProcesser.cpp" to "ImageProcessor.cpp"
-# And assuming the file will be renamed. If not, change this line back.
 check_and_add_source("Source/ImageProcessor.cpp" source_files)
 check_and_add_source("Source/SettingsWindow.cpp" source_files)
 # NOTE: Removed non-existent source files
@@ -105,9 +99,6 @@ foreach(lib ${libraries})
         message(WARNING "Kütüphane bulunamadi: ${lib}")
     endif()
 endforeach()
-
-# NOTE: Linking the fmt library
-target_link_libraries(LMWallpaper PRIVATE fmt::fmt)
 
 # Add resource file if it exists
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/LMWallpaper.rc")

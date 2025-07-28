@@ -1,20 +1,45 @@
-// Logger.h
 #pragma once
 
 #include <string>
-#include <mutex>
-#include <fstream>
+#include <vector>
 #include <chrono>
-#include <fmt/format.h>
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <iomanip>
+#include <mutex>
+
+enum class LogLevel {
+    INFO,
+    WARNING,
+    ERROR
+};
+
+struct LogEntry {
+    LogLevel level;
+    std::string message;
+    std::chrono::system_clock::time_point timestamp;
+};
 
 class Logger {
 public:
-    static void initialize();
-    static void log(const std::string& message, LogLevel level = INFO);
-    
+    static Logger& GetInstance();
+
+    void Log(const std::string& message, LogLevel level = LogLevel::INFO);
+    void Log(const std::wstring& message, LogLevel level = LogLevel::INFO);
+
+    const std::vector<LogEntry>& GetHistory() const;
+    void SetLogFile(const std::string& filePath);
+
 private:
-    static std::mutex mutex_;
-    static std::ofstream fileLog_;
-    static std::string getCurrentTime();
-    static std::string getLogLevelString(LogLevel level);
+    Logger();
+    ~Logger();
+    Logger(const Logger&) = delete;
+    Logger& operator=(const Logger&) = delete;
+
+    void WriteToFile(const LogEntry& entry);
+
+    std::vector<LogEntry> m_history;
+    std::ofstream m_logFile;
+    std::mutex m_mutex;
 };
